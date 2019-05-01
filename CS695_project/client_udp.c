@@ -10,18 +10,25 @@
 #include <iostream>
 #include <thread>
 #include <vector>
-
+#include <mutex>
 using namespace std;
+
+
+mutex lockcount; 
 #define PORT 8080
 #define MAXLINE 1024
 char *hello = "Hello from client";
 char buffer[MAXLINE];
 struct sockaddr_in servaddr;
 int sockfd;
-int flag = 1;
+int flag = 1;	
+unsigned long long globalcount = 0;
+
 
 void serviceThread()
 {
+	unsigned long count = 0;
+
 	while (flag)
 	{
 		int n;
@@ -29,14 +36,19 @@ void serviceThread()
 		sendto(sockfd, (const char *)hello, strlen(hello),
 			   MSG_CONFIRM, (const struct sockaddr *)&servaddr,
 			   sizeof(servaddr));
-		printf("Hello message sent.\n");
+		// printf("Hello message sent.\n");
 
 		n = recvfrom(sockfd, (char *)buffer, MAXLINE,
 					 MSG_WAITALL, (struct sockaddr *)&servaddr,
 					 &len);
 		buffer[n] = '\0';
-		printf("Server : %s\n", buffer);
+		// printf("Server : %s\n", buffer);
+		count++;
 	}
+	lockcount.lock();
+	globalcount = globalcount+count;
+	lockcount.unlock();
+
 }
 
 int main()
@@ -72,7 +84,7 @@ int main()
 	flag = 0;
 	for (auto &t : threads)
 		t.join();
-
+	cout<<"Throughput = "<<globalcount/timer<<endl;
 	close(sockfd);
 	return 0;
 }
