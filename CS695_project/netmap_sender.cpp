@@ -14,8 +14,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 using namespace std;
-
+#include <thread>
 #include "serialDserial.h"
+#include <mutex>
 
 #define ARP_REQUEST 1
 #define ARP_REPLY 2
@@ -28,7 +29,10 @@ struct nm_desc *d;
 struct nmreq nmr;
 struct pollfd fds;
 int fd, length;
-
+int flag = 1;
+mutex lockcount;
+mutex sendrecvlock;
+unsigned long long int globalcount=0;
 void send_batch()
 {
     send_ring->head = send_ring->cur;
@@ -62,27 +66,37 @@ void process_receive_buffer()
 
 void sendnrecv()
 {
-    cout<<"hello"<<endl;
-    int cur = receive_ring->cur;
-    int n, rx;
-    char *src;
-    process_receive_buffer();
-    poll(&fds, 1, -1);
-    ioctl(fds.fd, NIOCRXSYNC, NULL);
-    n = nm_ring_space(receive_ring);
-    for (rx = 0; rx < n; rx++)
-    {
-        struct netmap_slot *slot = &receive_ring->slot[cur];
-        src = NETMAP_BUF(receive_ring, slot->buf_idx);
-        length = slot->len;
-        cur = nm_ring_next(receive_ring, cur);
-    }
 
-    struct wireBuffer decodewire;
-    decodewire.decode(string(src), &decodewire);
-    cout << "ip = " << decodewire.ip << endl;
-    cout << "msg = " << decodewire.msg << endl;
-    cout << "udp = " << decodewire.udp << endl;
+    unsigned long long int count=0;    
+    while (flag)
+    {
+        sendrecvlock.lock();
+        int cur = receive_ring->cur;
+        int n, rx;
+        char *src;
+        process_receive_buffer();
+        poll(&fds, 1, -1);
+        ioctl(fds.fd, NIOCRXSYNC, NULL);
+        n = nm_ring_space(receive_ring);
+        for (rx = 0; rx < n; rx++)
+        {
+            struct netmap_slot *slot = &receive_ring->slot[cur];
+            src = NETMAP_BUF(receive_ring, slot->buf_idx);
+            length = slot->len;
+            cur = nm_ring_next(receive_ring, cur);
+        }
+        sendrecvlock.unlock();
+
+        struct wireBuffer decodewire;
+        decodewire.decode(string(src), &decodewire);
+        cout << "ip = " << decodewire.ip << endl;
+        cout << "msg = " << decodewire.msg << endl;
+        cout << "udp = " << decodewire.udp << endl;
+        count++;
+    }
+    lockcount.lock();
+    globalcount =globalcount+count;
+    lockcount.unlock();
 }
 
 int main()
@@ -96,7 +110,7 @@ int main()
     struct arp_cache_entry *entry;
     memset(&base_req, 0, sizeof(base_req));
     base_req.nr_flags |= NR_ACCEPT_VNET_HDR;
-    d = nm_open("vale:y", &base_req, 0, 0);
+    d = nm_open("vale:3", &base_req, 0, 0);
     fds.fd = NETMAP_FD(d);
     fds.events = POLLIN;
     receive_ring = NETMAP_RXRING(d->nifp, 0);
@@ -107,8 +121,23 @@ int main()
 
     send_ring = NETMAP_TXRING(d->nifp, 0);
 
-    sendnrecv();
-
+    int n;
+    int timer;
+    cout << "whats the count of threads" << endl;
+    cin >> n;
+    cout << "whats the time of loadtest" << endl;
+    cin >> timer;
+    vector<thread> threads;
+    for (int i = 0; i < n; i++)
+    {
+        threads.push_back(thread(sendnrecv));
+    }
+    sleep(timer);
+    flag = 0;
+    for (auto &t : threads)
+        t.join();
+    cout << "Throughput = " << globalcount / timer << endl;
+    // close(sockfd);
+    // sendnrecv();
     nm_close(d);
-
 }

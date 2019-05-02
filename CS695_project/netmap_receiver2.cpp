@@ -15,6 +15,9 @@
 #include <arpa/inet.h>
 using namespace std;
 #include "serialDserial.h"
+#include <thread>
+#include <mutex>
+
 
 #define ARP_REQUEST 1
 #define ARP_REPLY 2
@@ -23,10 +26,13 @@ using namespace std;
 
 struct netmap_if *nifp;
 struct netmap_ring *send_ring, *receive_ring;
+struct netmap_ring *send_ring2, *receive_ring2;
 struct nm_desc *d;
 struct nmreq nmr;
 struct pollfd fds;
 int fd, length;
+mutex lockcount;
+
 
 void send_batch()
 {
@@ -65,7 +71,7 @@ void send_buffer(char *buffer)
 }
 
 
-void recv()
+void recvd()
 {
     char *src;
     int cur = receive_ring->cur;
@@ -74,6 +80,7 @@ void recv()
     int count = 0;
     while (1)
     {
+        lockcount.lock();
         poll(&fds, 1, -1);
         ioctl(fds.fd, NIOCRXSYNC, NULL);
         n = nm_ring_space(receive_ring);
@@ -85,14 +92,15 @@ void recv()
             cur = nm_ring_next(receive_ring, cur);
         }
         count = count + rx;
+        send_buffer(src);
+        receive_ring->head = receive_ring->cur = cur;
+        lockcount.unlock();
 
         struct wireBuffer decodewire;
         decodewire.decode(string(src), &decodewire);
         cout << "ip = " << decodewire.ip << endl;
         cout << "msg = " << decodewire.msg << endl;
         cout << "udp = " << decodewire.udp << endl;
-        send_buffer(src);
-        receive_ring->head = receive_ring->cur = cur;
     }
 }
 
@@ -107,7 +115,7 @@ int main()
     struct arp_cache_entry *entry;
     memset(&base_req, 0, sizeof(base_req));
     base_req.nr_flags |= NR_ACCEPT_VNET_HDR;
-    d = nm_open("vale:x", &base_req, 0, 0);
+    d = nm_open("vale:4", &base_req, 0, 0);
     fds.fd = NETMAP_FD(d);
     fds.events = POLLIN;
     receive_ring = NETMAP_RXRING(d->nifp, 0);
@@ -116,7 +124,16 @@ int main()
     std::cout << "total buffer size" << base_req.nr_memsize << std::endl;
     std::cout << "rx slots, tx slots" << base_req.nr_rx_slots << " " << base_req.nr_tx_slots << std::endl;
     send_ring = NETMAP_TXRING(d->nifp, 0);
-  
-    recv();
+    int n;
+    int timer;
+    cout << "whats the count of threads" << endl;
+    cin >> n;
+    vector<thread> threads;
+    for (int i = 0; i < n; i++)
+    {
+        threads.push_back(thread(recvd));
+    }
+    for (auto &t : threads)
+        t.join();
     nm_close(d);
 }
