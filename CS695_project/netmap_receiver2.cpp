@@ -38,26 +38,27 @@ vector<pollfd> fds;
 // struct pollfd fds2;
 int fd, length;
 mutex lockcount;
+#define PACKET_SIZE 1024
 
 void send_buffer(char *buffer,int i)
 {
     length = strlen(buffer);
-    // string msg = "hello";
-    // struct udp_header udphdr
-    // {
-    //     1, 2, 3, 4
-    // };
+    string msg = "hello";
+    struct udp_header udphdr
+    {
+        1, 2, 3, 4
+    };
 
-    // struct ip_header iphdr
-    // {
-    //     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
-    // };
-    // struct wireBuffer wiremsg
-    // {
-    //     udphdr.encode(), iphdr.encode(), msg
-    // };
+    struct ip_header iphdr
+    {
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+    };
+    struct wireBuffer wiremsg
+    {
+        udphdr.encode(), iphdr.encode(), msg
+    };
     char *dst = NETMAP_BUF(send_ring[i], send_ring[i]->slot[send_ring[i]->cur].buf_idx);
-    memcpy(dst, "hello", 5);
+    memcpy(dst,(wiremsg.encode()).c_str(),PACKET_SIZE);
     send_ring[i]->cur = nm_ring_next(send_ring[i], send_ring[i]->cur);
     send_ring[i]->head = send_ring[i]->cur;
     ioctl(fds[i].fd, NIOCTXSYNC, NULL);
@@ -98,7 +99,7 @@ void recvd(int i)
     {
         // lockcount.lock();
         poll(&fds[i], 1, -1);
-        // ioctl(fds[i].fd, NIOCRXSYNC, NULL);
+        ioctl(fds[i].fd, NIOCRXSYNC, NULL);
         n = nm_ring_space(receive_ring[i]);
         for (rx = 0; rx < n; rx++)
         {
@@ -114,8 +115,8 @@ void recvd(int i)
         ioctl(fds[i].fd, NIOCTXSYNC, NULL);
         // lockcount.unlock();
 
-        // struct wireBuffer decodewire;
-        // decodewire.decode(string(src), &decodewire);
+        struct wireBuffer decodewire;
+        decodewire.decode(string(src), &decodewire);
         // cout << i<<" ip = " << decodewire.ip << endl;
         // cout << i<< "msg = " << decodewire.msg << endl;
         // cout << i<< "udp = " << decodewire.udp << endl;
@@ -166,30 +167,6 @@ int main()
     struct arp_cache_entry *entry;
     memset(&base_req, 0, sizeof(base_req));
     base_req.nr_flags |= NR_ACCEPT_VNET_HDR;
-    // d1 = nm_open("vale:4", &base_req, 0, 0);
-    // d2 = nm_open("vale:2", &base_req, 0, 0);
-    // fds1.fd = NETMAP_FD(d1);
-    // fds2.fd = NETMAP_FD(d2);
-    // fds1.events = POLLIN;
-    // fds2.events = POLLIN;
-    // receive_ring1 = NETMAP_RXRING(d1->nifp, 0);
-    // receive_ring2 = NETMAP_RXRING(d2->nifp, 0);
-    // std::cout << "number of slots" << receive_ring1->num_slots << std::endl;
-    // std::cout << "buffer size" << receive_ring1->nr_buf_size << std::endl;
-    // std::cout << "total buffer size" << base_req.nr_memsize << std::endl;
-    // std::cout << "rx slots, tx slots" << base_req.nr_rx_slots << " " << base_req.nr_tx_slots << std::endl;
-
-    // std::cout << "number of slots" << receive_ring2->num_slots << std::endl;
-    // std::cout << "buffer size" << receive_ring2->nr_buf_size << std::endl;
-    // std::cout << "total buffer size" << base_req.nr_memsize << std::endl;
-    // std::cout << "rx slots, tx slots" << base_req.nr_rx_slots << " " << base_req.nr_tx_slots << std::endl;
-
-    // send_ring1 = NETMAP_TXRING(d1->nifp, 0);
-    // send_ring2 = NETMAP_TXRING(d2->nifp, 0);
-    // thread th1(recvd1);
-    // thread th2(recvd2);
-    // th1.join();
-    // th2.join();
 
     int n;
     int timer;

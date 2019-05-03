@@ -42,30 +42,31 @@ int fd, length;
 int flag = 1;
 mutex lockcount;
 mutex sendrecvlock;
-unsigned long long int globalcount = 0;
+unsigned long long int globalcount = 0, globaltime=0;
+#define PACKET_SIZE 1024
 
-
+long microsecond1, microsecond2, ns;
 
 void process_receive_buffer(int i)
 {
 
-    // // length = strlen(buffer);
-    // string msg = "hello";
-    // struct udp_header udphdr
-    // {
-    //     1, 2, 3, 4
-    // };
+    // length = strlen(buffer);
+    string msg = "hello";
+    struct udp_header udphdr
+    {
+        1, 2, 3, 4
+    };
 
-    // struct ip_header iphdr
-    // {
-    //     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
-    // };
-    // struct wireBuffer wiremsg
-    // {
-    //     udphdr.encode(), iphdr.encode(), msg
-    // };
+    struct ip_header iphdr
+    {
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+    };
+    struct wireBuffer wiremsg
+    {
+        udphdr.encode(), iphdr.encode(), msg
+    };
     char *dst = NETMAP_BUF((send_ring[i]), (send_ring[i])->slot[(send_ring[i])->cur].buf_idx);
-    memcpy(dst, "hello", 5);
+    memcpy(dst, (wiremsg.encode()).c_str(),PACKET_SIZE);
     (send_ring[i])->cur = nm_ring_next((send_ring[i]), (send_ring[i])->cur);
     (send_ring[i])->head = (send_ring[i])->cur;
     ioctl(fds[i].fd, NIOCTXSYNC, NULL);
@@ -75,15 +76,16 @@ void sendnrecv(int i)
 {
 
     unsigned long long int count = 0;
+    struct timespec start, finish;
     while (flag)
     {
         // sendrecvlock.lock();
         int cur = receive_ring[i]->cur;
         int n, rx;
         char *src;
+        clock_gettime(CLOCK_REALTIME, &start);
+		microsecond1 = microsecond1 + 1000000000 * start.tv_sec + start.tv_nsec;
         process_receive_buffer(i);
-        poll(&fds[i], 1, -1);
-        // ioctl(fds[i].fd, NIOCTXSYNC, NULL);
         n = nm_ring_space(receive_ring[i]);
         for (rx = 0; rx < n; rx++)
         {
@@ -101,9 +103,13 @@ void sendnrecv(int i)
         // cout <<i <<" ip = " << decodewire.ip << endl;
         // cout <<i <<" msg = " << decodewire.msg << endl;
         // cout << i<<" udp = " << decodewire.udp << endl;
+        clock_gettime(CLOCK_REALTIME, &finish);
+
+		microsecond2 = microsecond2 + 1000000000 * finish.tv_sec + finish.tv_nsec;
         count++;
     }
     lockcount.lock();
+    globaltime = globaltime+(microsecond2-microsecond1);
     globalcount = globalcount + count;
     lockcount.unlock();
 }
@@ -167,6 +173,7 @@ int main()
     for (auto &t : threads)
         t.join();
     cout << "Throughput = " << globalcount / timer << endl;
+    // cout<<"Average Response time = " << ((double)globaltime/((double)globalcount)) << " ns" <<endl;
     for (int i = 0; i < n; i++)
         nm_close(d[i]);
 }
